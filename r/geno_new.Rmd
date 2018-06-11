@@ -1,0 +1,238 @@
+---
+title: "random_intervals"
+author: "Gracie Yao"
+date: "April 5, 2018"
+output: html_document
+---
+
+```{r}
+#import data
+data<-read.table("C:\\Users\\Yao\\Desktop\\sp18\\DNA\\making_random_regions\\data\\input\\cleanedFlybaseBetweenGenes_17July2017.BED")
+df<-as.data.frame(data)
+
+```
+
+
+```{r}
+# random pick 10000 rows
+random_rows<-sample(1:nrow(df),10000) 
+df<-df[random_rows,]
+# get tables based on chromosome type
+ordered_df<-df[order(df$V2, decreasing = FALSE),]
+Y<-filter(ordered_df, ordered_df$V1=="Y")[,2:3]
+Y
+X<-filter(ordered_df, ordered_df$V1=="X")[,2:3]
+L2<-filter(ordered_df, ordered_df$V1=="2L")[,2:3]
+R2<-filter(ordered_df, ordered_df$V1=="2R")[,2:3]
+L3<-filter(ordered_df, ordered_df$V1=="3L")[,2:3]
+# get a general idea of how many overlaps we have for each type of chromosome
+string<-c()
+num_overlap<-function(table){
+for (i in 1:(nrow(table)-1)){
+  if (table$V2[i+1]<=table$V3[i]){
+    string[i]<-T # T indicates overlap occurs
+  } else {
+    string[i]<-F  
+  }
+}
+  sum(string)
+}
+
+Num_overlaps<-c(num_overlap(Y),num_overlap(X),num_overlap(L2), num_overlap(R2),num_overlap(L3))
+Chromosome<-c("Y","X","L2","R2","L3")
+Counts<-c(nrow(Y),nrow(X),nrow(L2),nrow(R2),nrow(L3))
+Chrom_table<-data.frame(Chromosome,Counts,Num_overlaps)
+Chrom_table
+```
+
+```{r}
+#create a function called pos which outputs a position table that shows where the overlaps start and end
+pos<-function(table){
+  # a string that indicates where the overlaps occur
+string<-c()
+for (i in 1:(nrow(table)-1)){
+  if (table$V2[i+1]<=table$V3[i]){
+    string[i]<-T # T indicates overlap occurs
+  } else {
+    string[i]<-F  
+  }
+} 
+  # place where nonoverlap starts
+stop<-which(string==FALSE) 
+  # creates a data frame that shows the start and end places of each long overlap; ex. start=1 and end=10 means the first ten intrvals are overlapped with each over; therefore, they can be combined and form the first long interval. The next one would be start =11 and end the 15, meaning that the subsequent five intervals are overlapped and can be combined to form the second long interval.
+position<-data.frame()
+position[1,1]<-1 # the first start must be 1
+position[1,2]<-stop[1]  
+for (i in 2:length(stop)){
+  if(stop[i]-stop[i-1]==1){
+    position[i,1]<-stop[i]
+    position[i,2]<-stop[i]
+  }else{
+    position[i,1]<-stop[i-1]+1
+    position[i,2]<-stop[i]
+  }
+}
+ position
+}
+pos_Y<-pos(Y)
+pos_X<-pos(X)
+pos_L2<-pos(L2)
+pos_R2<-pos(R2)
+pos_L3<-pos(L3)
+```
+
+
+```{r}
+# using the position table to find corresponding intervals
+interval_table<-function(table,pos){
+int<-data.frame()
+for (i in 1:nrow(pos)){
+  int[i,1]<-table$V2[pos[i,1]]
+  int[i,2]<-max(table$V3[pos[i,1]:pos[i,2]])
+}
+ colnames(int)<-c("V2","V3")
+ int
+}
+
+int_Y<-interval_table(Y,pos_Y)
+int_X<-interval_table(X,pos_X)
+int_L2<-interval_table(L2,pos_L2)
+int_R2<-interval_table(R2,pos_R2)
+int_L3<-interval_table(L3,pos_L3)
+```
+
+```{r}
+# For each chromosome table, check if there is any overlapping remains
+# If yes, repeat the above steps until combine all overlapping intervals
+
+################# Y
+
+num_overlap(int_Y) # =0 means all the overlappings are combined
+
+################# X
+num_overlap(int_X) # = 30 means still has overlappings 
+
+while(num_overlap(int_X)!=0){
+  pos_X<-pos(int_X)
+  int_X<-interval_table(int_X,pos_X)
+}
+nrow(int_X)
+
+################ L2
+num_overlap(int_L2)
+
+while(num_overlap(int_L2)!=0){
+  pos_L2<-pos(int_L2)
+  int_L2<-interval_table(int_L2,pos_L2)
+}
+
+################ R2
+num_overlap(int_R2)
+
+while(num_overlap(int_R2)!=0){
+  pos_R2<-pos(int_R2)
+  int_R2<-interval_table(int_R2,pos_R2)
+}
+
+############### L3
+num_overlap(int_L3)
+
+while(num_overlap(int_L3)!=0){
+  pos_L3<-pos(int_L3)
+  int_L3<-interval_table(int_L3,pos_L3)
+}
+nrow(int_L3)
+head(int_X)
+```
+
+
+```{r}
+# create a table which indicates the start and end of each big interval, its length, and how many small intervals of length 2000 will be picked from it.
+count_table<-function(int_table){
+number_table<- int_table %>% 
+  mutate(start=V2, 
+         end=V3-2000,   
+         length=V3-V2,
+         counts=round(length/2000),
+         weight=counts/sum(counts),
+         num_pick=round(weight*sum(counts)*0.7))%>%
+  arrange(desc(length)) %>%
+  filter(num_pick>1)
+number_table[,-c(1,2)]
+}
+count_Y<-count_table(int_Y)
+count_X<-count_table(int_X)
+count_L2<-count_table(int_L2)
+count_R2<-count_table(int_R2)
+count_L3<-count_table(int_L3)
+
+sum(count_Y$num_pick)
+```
+
+
+```{r}
+# This function is used to get random intervals. The idea is to first divide the big interval into n small sections, where n is the number of small intervals that we are going to pick from this big interval. We are guranteed that each section is much longer than 2000. Then, from the first section, we randomly pick one interval whose end position is a1. The next step is the consider a1 as the new start point of the long interval. We divide the interval into n-1 small sections, and again pick one small interval from the first section. Repeat the step untill get all n intervals of length 2000.
+
+# the row is the number of rows of the count_table. For example,  count_Y has 21 rows. The first row tells us the number of pick (count_Y$num_pick) in the first big interval (the information we need here are $start and $end). After we run get_start_pt(1), we would get a vector of random starting positions whose length 370 since in the first long interval, we want to pick 370 small intervals. 
+# run this function 21 times with input 1 to 21 to get all the random intervals. 
+
+# NOTE: Here we eliminate all the short rows
+
+get_start_pt<-function(count_table, row){
+  a<-c()
+  end<-count_table$end
+  pick<-count_table$num_pick
+  a[1]<-count_table$start[row]
+  a[2]<-sample(a[1]:(a[1]+(end[row]-a[1])/pick[row]),1)
+for (i in 2:pick[row]){
+  a[i+1]<-sample(
+                (a[i]+2000):
+                (a[i]+(end[row]-a[i]-2000)/(pick[row]-(i-1))),1)
+}
+  a[-1]
+}
+
+
+```
+
+```{r}
+#### write a for loop to put all the output of the function into a list and then unlist it to get the vector that contains all the random starting position. 
+
+start <- function(count_table){
+  interval_start <- list()
+  for (i in 1:nrow(count_table)){
+  interval_start[[i]]<-get_start_pt(count_table,i)
+}
+   unlist(interval_start)
+}
+
+random_start_Y<-start(count_Y)
+random_start_X<-start(count_X)
+random_start_L2<-start(count_L2)
+random_start_R2<-start(count_R2)
+random_start_L3<-start(count_L3)
+```
+
+
+```{r}
+# use the starting positions to get the intervals and put them into a dataframe
+random_df <- function(random_start_list){
+  random_start_l <- sample(random_start_list, length(random_start_list), replace=FALSE)
+  data.frame(start = random_start_l, end = random_start_l + 2000)
+} 
+
+random_int_df_Y <- random_df(random_start_Y)
+random_int_df_X <- random_df(random_start_X)
+random_int_df_L2 <- random_df(random_start_L2)
+random_int_df_R2 <- random_df(random_start_R2)
+random_int_df_L3 <- random_df(random_start_L3)
+
+#save(random_int_df_Y,file = "C:/Users/Yao/Desktop/sp18/DNA/random_int_df_Y.csv")
+#save(random_int_df_X,file = "C:/Users/Yao/Desktop/sp18/DNA/random_int_df_X.csv")
+#save(random_int_df_L2,file = "C:/Users/Yao/Desktop/sp18/DNA/random_int_df_L2.csv")
+#save(random_int_df_R2,file = "C:/Users/Yao/Desktop/sp18/DNA/random_int_df_R2.csv")
+#save(random_int_df_L3,file = "C:/Users/Yao/Desktop/sp18/DNA/random_int_df_L3.csv")
+
+```
+
+
